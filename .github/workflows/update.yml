@@ -1,46 +1,32 @@
-name: Update Telecom IPs hourly
+name: Fetch Telecom IPs
 
 on:
   schedule:
-    - cron: "0 * * * *"   # 每小时的第0分钟（UTC）执行
-  workflow_dispatch:       # 支持手动触发
+    - cron: "0 * * * *"  # 每小时运行一次
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
-  update-ips:
+  update_ips:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        run: pip install requests
 
-      # 也可用专门的依赖安装 Action（可选）
-      # - name: Install dependencies
-      #   uses: py-actions/py-dependency-install@v4
-      #   with:
-      #     path: "requirements.txt"
+      - name: Run script
+        run: python fetch_ip.py
 
-      - name: Run scraper
+      - name: Commit and push if changed
         run: |
-          python fetch_telecom_ips.py
-
-      - name: Commit and push changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add data/telecom_ips.txt
-            git commit -m "Hourly telecom IPs update: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git push
-          else
-            echo "No changes to commit"
-          fi
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add china_telecom_ips.txt
+          git commit -m "Auto update telecom IPs" || exit 0
+          git push
