@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 import logging
 import sys
+import re
 
 # 配置日志
 logging.basicConfig(
@@ -18,7 +19,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ip_updater.log')
+        logging.FileHandler('ip_updater.log', encoding='utf-8')
     ]
 )
 
@@ -28,28 +29,28 @@ class TelecomIPUpdater:
     def __init__(self):
         self.target_url = "https://api.uouin.com/cloudflare.html"
         self.output_file = "telecom_ips.txt"
-        self.telecom_keywords = ['电信', 'China Telecom', 'CT', 'telecom']
+        self.telecom_keywords = ['电信', 'China Telecom', 'CT', 'telecom', 'chntel']
         
     def fetch_ips_data(self):
         """从API获取IP数据"""
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
             }
             
             logger.info(f"开始从 {self.target_url} 获取数据")
-            response = requests.get(self.target_url, headers=headers, timeout=30)
+            response = requests.get(self.target_url, headers=headers, timeout=45)
             response.raise_for_status()
             
-            # 检查编码
-            if response.encoding.lower() == 'iso-8859-1':
-                response.encoding = response.apparent_encoding
+            # 自动检测编码
+            if response.encoding.lower() in ['iso-8859-1', 'windows-1252']:
+                response.encoding = response.apparent_encoding or 'utf-8'
                 
-            logger.info("数据获取成功")
+            logger.info(f"数据获取成功，长度: {len(response.text)} 字符")
             return response.text
             
         except requests.exceptions.RequestException as e:
@@ -66,57 +67,65 @@ class TelecomIPUpdater:
             soup = BeautifulSoup(html_content, 'html.parser')
             logger.info("开始解析HTML内容")
             
-            # 方法1: 查找表格中的IP数据
+            # 移除脚本和样式标签
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # 方法1: 查找所有表格
             tables = soup.find_all('table')
             logger.info(f"找到 {len(tables)} 个表格")
             
             for i, table in enumerate(tables):
-                rows = table.find_all('tr')
-                logger.info(f"表格 {i+1} 有 {len(rows)} 行")
-                
+                rows = table.find_all('tr')[1:]  # 跳过表头
                 for j, row in enumerate(rows):
                     cells = row.find_all(['td', 'th'])
                     cell_texts = [cell.get_text(strip=True) for cell in cells]
                     
-                    # 查找包含电信关键词的行
-                    for text in cell_texts:
-                        if any(keyword in text for keyword in self.telecom_keywords):
-                            # 在同一行中查找IP地址
-                            for cell_text in cell_texts:
-                                ip = self.extract_ip(cell_text)
-                                if ip and ip not in telecom_ips:
-                                    telecom_ips.append(ip)
-                                    logger.debug(f"找到电信IP: {ip}")
-                            break
+                    # 调试信息
+                    if j < 3:  # 只记录前3行用于调试
+                        logger.debug(f"表格{i+1} 行{j+1}: {cell_texts}")
+                    
+                    # 检查是否包含电信关键词
+                    is_telecom = any(
+                        any(keyword in text for keyword in self.telecom_keywords)
+                        for text in cell_texts
+                    )
+                    
+                    if is_telecom:
+                        # 提取IP地址
+                        for text in cell_texts:
+                            ip = self.extract_ip(text)
+                            if ip and ip not in telecom_ips:
+                                telecom_ips.append(ip)
+                                logger.info(f"找到电信IP: {ip}")
             
-            # 方法2: 在整个页面中搜索IP模式
+            # 方法2: 在整个页面中搜索
             if not telecom_ips:
                 logger.info("尝试在整个页面中搜索IP地址")
                 all_text = soup.get_text()
-                import re
-                ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-                all_ips = re.findall(ip_pattern, all_text)
+                all_ips = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', all_text)
                 
-                # 简单的IP验证
                 for ip in all_ips:
                     if self.is_valid_ip(ip) and ip not in telecom_ips:
                         telecom_ips.append(ip)
+                
+                logger.info(f"通过全文搜索找到 {len(telecom_ips)} 个IP")
             
-            # 去重
-            telecom_ips = list(set(telecom_ips))
-            logger.info(f"共找到 {len(telecom_ips)} 个唯一的电信IP地址")
+            # 去重和排序
+            telecom_ips = sorted(list(set(telecom_ips)))
+            logger.info(f"解析完成，共找到 {len(telecom_ips)} 个唯一的电信IP地址")
             
             return telecom_ips
             
         except Exception as e:
             logger.error(f"解析数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     def extract_ip(self, text):
         """从文本中提取IP地址"""
-        import re
-        ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-        match = re.search(ip_pattern, text)
+        match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
         if match and self.is_valid_ip(match.group()):
             return match.group()
         return None
@@ -129,6 +138,11 @@ class TelecomIPUpdater:
         for part in parts:
             if not part.isdigit() or not 0 <= int(part) <= 255:
                 return False
+        # 排除一些常见的无效IP
+        if ip.startswith('0.') or ip.startswith('127.') or ip.startswith('169.254.'):
+            return False
+        if ip == '255.255.255.255':
+            return False
         return True
     
     def save_ips_to_file(self, ips):
@@ -144,13 +158,26 @@ class TelecomIPUpdater:
 
 """
             # 添加每个IP地址
-            for ip in sorted(ips):
+            for ip in ips:
                 content += f"{ip}\n"
             
             with open(self.output_file, 'w', encoding='utf-8') as f:
                 f.write(content)
             
             logger.info(f"IP地址已保存到 {self.output_file}")
+            
+            # 同时保存JSON格式用于其他用途
+            json_data = {
+                "update_time": timestamp,
+                "source": self.target_url,
+                "total_ips": len(ips),
+                "ips": ips
+            }
+            
+            with open('telecom_ips.json', 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+            
+            logger.info("JSON格式数据已保存到 telecom_ips.json")
             return True
             
         except Exception as e:
@@ -161,6 +188,8 @@ class TelecomIPUpdater:
         """执行完整的更新流程"""
         logger.info("=== 开始电信IP更新任务 ===")
         
+        start_time = datetime.now()
+        
         # 获取数据
         html_content = self.fetch_ips_data()
         if not html_content:
@@ -169,18 +198,17 @@ class TelecomIPUpdater:
         
         # 解析电信IP
         telecom_ips = self.parse_telecom_ips(html_content)
-        if not telecom_ips:
-            logger.warning("未找到电信IP地址")
-            # 仍然创建文件，但内容为空或包含说明
-            telecom_ips = ["# 本次未找到电信IP地址，请检查数据源或解析逻辑"]
         
         # 保存到文件
         success = self.save_ips_to_file(telecom_ips)
         
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
         if success:
-            logger.info("=== 电信IP更新任务完成 ===")
+            logger.info(f"=== 电信IP更新任务完成，耗时: {duration:.2f}秒 ===")
         else:
-            logger.error("=== 电信IP更新任务失败 ===")
+            logger.error(f"=== 电信IP更新任务失败，耗时: {duration:.2f}秒 ===")
         
         return success
 
