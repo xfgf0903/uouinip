@@ -168,27 +168,16 @@ class TelecomIPUpdater:
     def save_ips_to_file(self, ips):
         """保存IP地址到文件"""
         try:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-            content = f"""# 电信优选IP地址
-# 更新时间: {timestamp}
-# 数据来源: {self.target_url}
-# 总数: {len(ips)} 个IP地址
-# 生成方式: 自动抓取并过滤电信线路
-
-"""
-            # 添加每个IP地址
-            for ip in ips:
-                content += f"{ip}\n"
-            
+            # 纯IP地址文件 - 每行一个IP
             with open(self.output_file, 'w', encoding='utf-8') as f:
-                f.write(content)
+                for ip in ips:
+                    f.write(f"{ip}\n")
             
-            logger.info(f"IP地址已保存到 {self.output_file}")
+            logger.info(f"IP地址已保存到 {self.output_file}，共 {len(ips)} 个IP")
             
-            # 同时保存JSON格式用于其他用途
+            # JSON文件包含详细信息（可选）
             json_data = {
-                "update_time": timestamp,
+                "update_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "source": self.target_url,
                 "total_ips": len(ips),
                 "ips": ips
@@ -197,7 +186,7 @@ class TelecomIPUpdater:
             with open('telecom_ips.json', 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, ensure_ascii=False, indent=2)
             
-            logger.info("JSON格式数据已保存到 telecom_ips.json")
+            logger.info("详细信息已保存到 telecom_ips.json")
             return True
             
         except Exception as e:
@@ -242,6 +231,7 @@ class TelecomIPUpdater:
         
         if success:
             logger.info(f"=== 电信IP更新任务完成，耗时: {duration:.2f}秒 ===")
+            logger.info(f"=== 生成 {len(telecom_ips)} 个电信IP地址 ===")
         else:
             logger.error(f"=== 电信IP更新任务失败，耗时: {duration:.2f}秒 ===")
         
