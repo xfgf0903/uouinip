@@ -1,0 +1,76 @@
+name: Update Telecom IPs
+
+on:
+  schedule:
+    # 每小时运行一次 (UTC时间)
+    - cron: '0 * * * *'
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      reason:
+        description: '手动触发原因'
+        required: false
+        default: '手动更新'
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  update-ips:
+    name: 更新电信优选IP
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: 运行IP更新脚本
+      run: |
+        python main.py
+
+    - name: 检查文件变化
+      id: git-check
+      run: |
+        git add telecom_ips.txt
+        echo "::set-output name=changes::$(git status --porcelain | wc -l)"
+
+    - name: 配置Git用户
+      if: steps.git-check.outputs.changes != '0'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: 提交更改
+      if: steps.git-check.outputs.changes != '0'
+      run: |
+        git add telecom_ips.txt
+        git commit -m "🔄 自动更新电信优选IP - $(date -u +'%Y-%m-%d %H:%M UTC')"
+        git push
+
+    - name: 上传日志文件
+      uses: actions/upload-artifact@v3
+      with:
+        name: ip-updater-logs
+        path: ip_updater.log
+        retention-days: 7
+
+    - name: 发送通知 (可选)
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: 电信IP更新任务执行失败，请检查日志！
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
