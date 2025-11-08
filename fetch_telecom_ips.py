@@ -44,7 +44,7 @@ def fetch_telecom_ips():
     ips = sorted(set(ips))
     
     # 添加时间戳到文件
-    with open(OUTPUT_FILE,"w"， encoding="utf-8") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(f"# 电信优选IP列表 - 更新时间（北京时间）: {get_beijing_time()}\n")
         f.write("# 数据来源: https://api.uouin.com/cloudflare.html\n")
         f.write("\n".join(ips))
@@ -53,5 +53,6 @@ def fetch_telecom_ips():
 
 if __name__ == "__main__":
     fetch_telecom_ips()
+
 
 
