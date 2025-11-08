@@ -1,5 +1,5 @@
 from selenium import webdriver
-from selenium.webdriver.chrome.options import 选项
+from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 import time
 import random
@@ -10,7 +10,7 @@ OUTPUT_FILE = "china_telecom_ips.txt"
 
 def get_beijing_time():
     """获取当前北京时间"""
-    utc_now = datetime.当前(timezone.utc)
+    utc_now = datetime.now(timezone.utc)
     beijing_time = utc_now.astimezone(timezone(timedelta(hours=8)))
     return beijing_time.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -26,7 +26,7 @@ def fetch_telecom_ips():
     driver = webdriver.Chrome(options=chrome_options)
     driver.get(URL)
     
-    # 使用随机延迟3-5秒[citation:1][citation:6]
+    # 使用随机延迟3-5秒
     random_delay = random.uniform(3, 5)
     print(f"等待页面加载，随机延迟 {random_delay:.2f} 秒")
     time.sleep(random_delay)
@@ -49,10 +49,7 @@ def fetch_telecom_ips():
         f.write("# 数据来源: https://api.uouin.com/cloudflare.html\n")
         f.write("\n".join(ips))
     
-    print(f"{get_beijing_time()} - ✅ 提取完成,共 {len(ips)} 个电信 IP.已保存到 {OUTPUT_FILE}")
+    print(f"{get_beijing_time()} - 提取完成，共 {len(ips)} 个电信 IP。已保存到 {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     fetch_telecom_ips()
-
-
-
