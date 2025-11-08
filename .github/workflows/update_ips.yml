@@ -2,8 +2,8 @@ name: Update Telecom IPs
 
 on:
   schedule:
-    # 每小时运行一次 (UTC时间)
-    - cron: '0 * * * *'
+    # 每小时运行一次 (北京时间 UTC+8)
+    - cron: '0 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * *'
   workflow_dispatch:  # 允许手动触发
     inputs:
       reason:
@@ -19,6 +19,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.9'
+  TZ: 'Asia/Shanghai'
 
 jobs:
   update-ips:
@@ -26,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: 设置时区为北京时间
+      run: |
+        sudo timedatectl set-timezone Asia/Shanghai
+        echo "当前时间: $(date)"
+
     - name: 检出代码
       uses: actions/checkout@v4
       with:
@@ -37,10 +43,15 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: 安装依赖
+    - name: 安装Chrome浏览器
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y chromium-browser chromium-chromedriver
+
+    - name: 安装Python依赖
       run: |
         python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 lxml
+        pip install selenium beautifulsoup4 lxml requests
 
     - name: 创建日志目录
       run: mkdir -p logs
@@ -55,6 +66,16 @@ jobs:
         ls -la
         echo "日志目录文件:"
         ls -la logs/ || echo "日志目录不存在"
+
+    - name: 显示IP文件内容预览
+      run: |
+        if [ -f telecom_ips.txt ]; then
+          echo "=== telecom_ips.txt 内容预览 ==="
+          head -10 telecom_ips.txt
+          echo "总IP数量: $(wc -l < telecom_ips.txt)"
+        else
+          echo "telecom_ips.txt 文件不存在"
+        fi
 
     - name: 检查文件变化
       id: git-check
@@ -72,11 +93,14 @@ jobs:
     - name: 提交更改
       if: steps.git-check.outputs.changes != '0'
       run: |
+        # 获取北京时间
+        BEIJING_TIME=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')
         git add telecom_ips.txt telecom_ips.json logs/
-        git commit -m "🔄 自动更新电信优选IP - $(date -u +'%Y-%m-%d %H:%M UTC')
+        git commit -m "🔄 自动更新电信优选IP - ${BEIJING_TIME} 北京时间
         
-        - 更新IP地址列表
-        - 添加执行日志"
+        - 使用Selenium模拟浏览器
+        - 随机延迟等待页面加载
+        - 更新IP地址列表"
         git push
 
     - name: 上传所有日志文件
@@ -93,10 +117,13 @@ jobs:
     - name: 显示任务摘要
       run: |
         echo "=== 任务执行摘要 ==="
-        echo "运行时间: $(date)"
+        echo "运行时间(北京时间): $(TZ='Asia/Shanghai' date)"
         echo "文件变化: ${{ steps.git-check.outputs.changes }}"
         if [ -f telecom_ips.txt ]; then
-          echo "生成的IP数量: $(grep -c '^[0-9]' telecom_ips.txt || echo 0)"
+          IP_COUNT=$(wc -l < telecom_ips.txt)
+          echo "生成的IP数量: $IP_COUNT"
+          echo "IP文件格式: 纯文本，每行一个IP"
+          echo "使用技术: Selenium + 随机延迟"
         else
           echo "IP文件未生成"
         fi
@@ -104,11 +131,16 @@ jobs:
     - name: 发送成功通知
       if: success() && steps.git-check.outputs.changes != '0'
       run: |
-        echo "✅ 电信IP更新成功 - 找到新的IP地址并已提交"
-        echo "查看更新的文件: telecom_ips.txt"
+        BEIJING_TIME=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')
+        echo "✅ 电信IP更新成功 - ${BEIJING_TIME} 北京时间"
+        echo "📄 文件格式: 纯IP地址，每行一个"
+        echo "🔢 IP数量: $(wc -l < telecom_ips.txt)"
+        echo "🖥️ 使用技术: Selenium模拟浏览器"
 
     - name: 发送失败通知
       if: failure()
       run: |
-        echo "❌ 电信IP更新失败 - 请检查日志"
+        BEIJING_TIME=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')
+        echo "❌ 电信IP更新失败 - ${BEIJING_TIME} 北京时间"
+        echo "请检查日志文件获取详细信息"
         exit 1
