@@ -1,82 +1,50 @@
-name: Update Telecom IPs
+name: Update China Telecom IPs
 
 on:
   schedule:
-    # 每小时运行一次 (北京时间 UTC+8)
-    - cron: '0 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * *'
-  workflow_dispatch:  # 允许手动触发
-    inputs:
-      reason:
-        description: '手动触发原因'
-        required: false
-        default: '手动更新'
-
-env:
-  PYTHON_VERSION: '3.9'
+    - cron: "0 * * * *"  # 每小时执行一次[citation:5]
+  workflow_dispatch:  # 允许手动触发[citation:10]
 
 jobs:
-  update-ips:
-    name: 更新电信优选IP
+  update:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v3
 
-    - name: 设置Python环境
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: 设置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-    - name: 安装Python依赖
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 lxml
+      - name: 安装Chrome和ChromeDriver
+        run: |
+          sudo apt update
+          sudo apt install -y wget unzip
+          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt install -y ./google-chrome-stable_current_amd64.deb
+          # 自动检测Chrome版本并安装匹配的ChromeDriver
+          CHROME_VERSION=$(google-chrome --version | grep -oE '[0-9]+' | head -1)
+          echo "检测到Chrome版本: $CHROME_VERSION"
+          DRIVER_VERSION=$(curl -sS "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_$CHROME_VERSION")
+          echo "使用ChromeDriver版本: $DRIVER_VERSION"
+          wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip"
+          unzip /tmp/chromedriver.zip -d /tmp/
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
 
-    - name: 创建日志目录
-      run: mkdir -p logs
+      - name: 安装Python依赖
+        run: |
+          pip install requests>=2.31.0 beautifulsoup4>=4.12.2 lxml>=4.9.3 selenium
 
-    - name: 运行IP更新脚本
-      run: |
-        python main.py
+      - name: 运行提取脚本
+        run: python fetch_telecom_ips.py
 
-    - name: 检查生成的文件
-      run: |
-        echo "=== 生成的文件 ==="
-        ls -la
-        if [ -f telecom_ips.txt ]; then
-          echo "telecom_ips.txt 内容:"
-          cat telecom_ips.txt
-          echo "IP数量: $(wc -l < telecom_ips.txt)"
-        else
-          echo "telecom_ips.txt 不存在"
-        fi
-
-    - name: 检查文件变化
-      id: git-check
-      run: |
-        git add telecom_ips.txt telecom_ips.json logs/
-        echo "changes=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
-
-    - name: 配置Git用户
-      if: steps.git-check.outputs.changes != '0'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-
-    - name: 提交更改
-      if: steps.git-check.outputs.changes != '0'
-      run: |
-        git add telecom_ips.txt telecom_ips.json logs/
-        git commit -m "🔄 自动更新电信优选IP - $(date +'%Y-%m-%d %H:%M')"
-        git push
-
-    - name: 上传日志文件
-      uses: actions/upload-artifact@v4
-      with:
-        name: ip-updater-logs
-        path: |
-          logs/
-          telecom_ips.txt
-          telecom_ips.json
-        retention-days: 3
+      - name: 提交更改
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "github-actions"
+          git add china_telecom_ips.txt
+          git commit -m "自动更新电信IP ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "无更改"
+          git push
