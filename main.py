@@ -12,14 +12,20 @@ from datetime import datetime
 import logging
 import sys
 import re
+import time
+
+# 确保日志目录存在
+os.makedirs('logs', exist_ok=True)
 
 # 配置日志
+log_filename = f"logs/ip_updater_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ip_updater.log', encoding='utf-8')
+        logging.FileHandler(log_filename, encoding='utf-8')
     ]
 )
 
@@ -30,6 +36,7 @@ class TelecomIPUpdater:
         self.target_url = "https://api.uouin.com/cloudflare.html"
         self.output_file = "telecom_ips.txt"
         self.telecom_keywords = ['电信', 'China Telecom', 'CT', 'telecom', 'chntel']
+        self.current_log_file = log_filename
         
     def fetch_ips_data(self):
         """从API获取IP数据"""
@@ -76,14 +83,12 @@ class TelecomIPUpdater:
             logger.info(f"找到 {len(tables)} 个表格")
             
             for i, table in enumerate(tables):
-                rows = table.find_all('tr')[1:]  # 跳过表头
+                rows = table.find_all('tr')
+                logger.info(f"表格 {i+1} 有 {len(rows)} 行")
+                
                 for j, row in enumerate(rows):
                     cells = row.find_all(['td', 'th'])
                     cell_texts = [cell.get_text(strip=True) for cell in cells]
-                    
-                    # 调试信息
-                    if j < 3:  # 只记录前3行用于调试
-                        logger.debug(f"表格{i+1} 行{j+1}: {cell_texts}")
                     
                     # 检查是否包含电信关键词
                     is_telecom = any(
@@ -99,8 +104,8 @@ class TelecomIPUpdater:
                                 telecom_ips.append(ip)
                                 logger.info(f"找到电信IP: {ip}")
             
-            # 方法2: 在整个页面中搜索
-            if not telecom_ips:
+            # 方法2: 在整个页面中搜索IP
+            if len(telecom_ips) < 3:  # 如果找到的IP太少，尝试全文搜索
                 logger.info("尝试在整个页面中搜索IP地址")
                 all_text = soup.get_text()
                 all_ips = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', all_text)
@@ -109,11 +114,26 @@ class TelecomIPUpdater:
                     if self.is_valid_ip(ip) and ip not in telecom_ips:
                         telecom_ips.append(ip)
                 
-                logger.info(f"通过全文搜索找到 {len(telecom_ips)} 个IP")
+                logger.info(f"通过全文搜索找到 {len(all_ips)} 个IP，去重后新增 {len(telecom_ips) - len(all_ips)} 个")
+            
+            # 方法3: 查找包含IP的pre或code标签
+            pre_tags = soup.find_all(['pre', 'code'])
+            for pre in pre_tags:
+                pre_text = pre.get_text()
+                if any(keyword in pre_text for keyword in self.telecom_keywords):
+                    ips_in_pre = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', pre_text)
+                    for ip in ips_in_pre:
+                        if self.is_valid_ip(ip) and ip not in telecom_ips:
+                            telecom_ips.append(ip)
+                            logger.info(f"从pre/code标签找到电信IP: {ip}")
             
             # 去重和排序
             telecom_ips = sorted(list(set(telecom_ips)))
             logger.info(f"解析完成，共找到 {len(telecom_ips)} 个唯一的电信IP地址")
+            
+            # 记录前5个IP作为示例
+            if telecom_ips:
+                logger.info(f"IP示例: {telecom_ips[:5]}")
             
             return telecom_ips
             
@@ -184,6 +204,16 @@ class TelecomIPUpdater:
             logger.error(f"保存文件失败: {e}")
             return False
     
+    def create_symlink_to_latest_log(self):
+        """创建指向最新日志文件的符号链接"""
+        try:
+            if os.path.exists('latest_log.txt'):
+                os.remove('latest_log.txt')
+            os.symlink(self.current_log_file, 'latest_log.txt')
+            logger.info(f"创建日志符号链接: latest_log.txt -> {self.current_log_file}")
+        except Exception as e:
+            logger.warning(f"创建日志符号链接失败: {e}")
+    
     def run(self):
         """执行完整的更新流程"""
         logger.info("=== 开始电信IP更新任务 ===")
@@ -194,6 +224,8 @@ class TelecomIPUpdater:
         html_content = self.fetch_ips_data()
         if not html_content:
             logger.error("无法获取数据，任务终止")
+            # 即使失败也创建日志文件
+            self.create_symlink_to_latest_log()
             return False
         
         # 解析电信IP
@@ -201,6 +233,9 @@ class TelecomIPUpdater:
         
         # 保存到文件
         success = self.save_ips_to_file(telecom_ips)
+        
+        # 创建日志符号链接
+        self.create_symlink_to_latest_log()
         
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -214,8 +249,16 @@ class TelecomIPUpdater:
 
 def main():
     """主函数"""
+    # 记录开始信息
+    logger.info("程序启动")
+    logger.info(f"Python版本: {sys.version}")
+    logger.info(f"工作目录: {os.getcwd()}")
+    
     updater = TelecomIPUpdater()
     success = updater.run()
+    
+    # 记录结束信息
+    logger.info("程序结束")
     
     # 设置退出码，用于GitHub Actions
     sys.exit(0 if success else 1)
