@@ -10,6 +10,10 @@ on:
         description: '手动触发原因'
         required: false
         default: '手动更新'
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'telecom_ips.txt'  # 忽略IP文件的变化，避免循环触发
 
 env:
   PYTHON_VERSION: '3.9'
@@ -21,7 +25,7 @@ jobs:
     
     steps:
     - name: 检出代码
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
@@ -44,7 +48,7 @@ jobs:
       id: git-check
       run: |
         git add telecom_ips.txt
-        echo "::set-output name=changes::$(git status --porcelain | wc -l)"
+        echo "changes=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
 
     - name: 配置Git用户
       if: steps.git-check.outputs.changes != '0'
@@ -59,18 +63,32 @@ jobs:
         git commit -m "🔄 自动更新电信优选IP - $(date -u +'%Y-%m-%d %H:%M UTC')"
         git push
 
-    - name: 上传日志文件
-      uses: actions/upload-artifact@v3
+    - name: 上传日志文件 (成功时)
+      if: success() && steps.git-check.outputs.changes != '0'
+      uses: actions/upload-artifact@v4
       with:
-        name: ip-updater-logs
+        name: ip-updater-logs-success
+        path: |
+          ip_updater.log
+          telecom_ips.txt
+        retention-days: 3
+
+    - name: 上传日志文件 (失败时)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ip-updater-logs-failure
         path: ip_updater.log
         retention-days: 7
 
-    - name: 发送通知 (可选)
+    - name: 发送成功通知 (可选)
+      if: success() && steps.git-check.outputs.changes != '0'
+      run: |
+        echo "✅ 电信IP更新成功 - 找到新的IP地址并已提交"
+        echo "查看更新的文件: telecom_ips.txt"
+
+    - name: 发送失败通知 (可选)
       if: failure()
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        text: 电信IP更新任务执行失败，请检查日志！
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        echo "❌ 电信IP更新失败 - 请检查日志"
+        exit 1
