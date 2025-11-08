@@ -44,12 +44,12 @@ def fetch_telecom_ips():
     ips = sorted(set(ips))
     
     # 添加时间戳到文件
-    with open(OUTPUT_FILE, "w"， encoding="utf-8") as f:
+    with open(OUTPUT_FILE,"w"， encoding="utf-8") as f:
         f.write(f"# 电信优选IP列表 - 更新时间（北京时间）: {get_beijing_time()}\n")
         f.write("# 数据来源: https://api.uouin.com/cloudflare.html\n")
-        f.write("\n"。join(ips))
+        f.write("\n".join(ips))
     
-    print(f"{get_beijing_time()} - ✅ 提取完成，共 {len(ips)} 个电信 IP。已保存到 {OUTPUT_FILE}")
+    print(f"{get_beijing_time()} - ✅ 提取完成,共 {len(ips)} 个电信 IP.已保存到 {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     fetch_telecom_ips()
