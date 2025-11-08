@@ -13,7 +13,9 @@ on:
   push:
     branches: [ main, master ]
     paths-ignore:
-      - 'telecom_ips.txt'  # 忽略IP文件的变化，避免循环触发
+      - 'telecom_ips.txt'
+      - 'telecom_ips.json'
+      - 'logs/**'
 
 env:
   PYTHON_VERSION: '3.9'
@@ -38,17 +40,28 @@ jobs:
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install requests beautifulsoup4 lxml
+
+    - name: 创建日志目录
+      run: mkdir -p logs
 
     - name: 运行IP更新脚本
       run: |
         python main.py
 
+    - name: 列出生成的文件
+      run: |
+        echo "当前目录文件:"
+        ls -la
+        echo "日志目录文件:"
+        ls -la logs/ || echo "日志目录不存在"
+
     - name: 检查文件变化
       id: git-check
       run: |
-        git add telecom_ips.txt
+        git add telecom_ips.txt telecom_ips.json logs/
         echo "changes=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+        echo "文件变化数量: $(git status --porcelain | wc -l)"
 
     - name: 配置Git用户
       if: steps.git-check.outputs.changes != '0'
@@ -59,35 +72,42 @@ jobs:
     - name: 提交更改
       if: steps.git-check.outputs.changes != '0'
       run: |
-        git add telecom_ips.txt
-        git commit -m "🔄 自动更新电信优选IP - $(date -u +'%Y-%m-%d %H:%M UTC')"
+        git add telecom_ips.txt telecom_ips.json logs/
+        git commit -m "🔄 自动更新电信优选IP - $(date -u +'%Y-%m-%d %H:%M UTC')
+        
+        - 更新IP地址列表
+        - 添加执行日志"
         git push
 
-    - name: 上传日志文件 (成功时)
-      if: success() && steps.git-check.outputs.changes != '0'
+    - name: 上传所有日志文件
       uses: actions/upload-artifact@v4
       with:
-        name: ip-updater-logs-success
+        name: ip-updater-logs
         path: |
-          ip_updater.log
+          logs/
           telecom_ips.txt
-        retention-days: 3
-
-    - name: 上传日志文件 (失败时)
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: ip-updater-logs-failure
-        path: ip_updater.log
+          telecom_ips.json
         retention-days: 7
+        if-no-files-found: warn
 
-    - name: 发送成功通知 (可选)
+    - name: 显示任务摘要
+      run: |
+        echo "=== 任务执行摘要 ==="
+        echo "运行时间: $(date)"
+        echo "文件变化: ${{ steps.git-check.outputs.changes }}"
+        if [ -f telecom_ips.txt ]; then
+          echo "生成的IP数量: $(grep -c '^[0-9]' telecom_ips.txt || echo 0)"
+        else
+          echo "IP文件未生成"
+        fi
+
+    - name: 发送成功通知
       if: success() && steps.git-check.outputs.changes != '0'
       run: |
         echo "✅ 电信IP更新成功 - 找到新的IP地址并已提交"
         echo "查看更新的文件: telecom_ips.txt"
 
-    - name: 发送失败通知 (可选)
+    - name: 发送失败通知
       if: failure()
       run: |
         echo "❌ 电信IP更新失败 - 请检查日志"
