@@ -39,7 +39,7 @@ def fetch_telecom_ips():
     for row in soup.find_all("tr"):
         cols = row.find_all("td")
         if len(cols) >= 2 and cols[0].get_text(strip=True) == "电信":
-            ips.append(cols[1]。get_text(strip=True))
+            ips.append(cols[1].get_text(strip=True))
     
     ips = sorted(set(ips))
     
@@ -53,4 +53,5 @@ def fetch_telecom_ips():
 
 if __name__ == "__main__":
     fetch_telecom_ips()
+
 
